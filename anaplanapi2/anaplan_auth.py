@@ -12,12 +12,19 @@
 
 
 
-from M2Crypto import EVP, RSA
+#from M2Crypto import EVP, RSA
+
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import utils
+
 from base64 import b64encode
 import requests
 import json
 import os
-import jks
+#import jks
 
 #===============================================================================
 # The private key must be RSA private key format
@@ -38,7 +45,7 @@ def get_keystore_pair(path, passphrase, alias, key_pass):
 	PRIVATE_END="-----END RSA PRIVATE KEY-----"
 	PUBLIC_BEGIN="-----BEGIN CERTIFICATE-----"
 	PUBLIC_END="-----END CERTIFICATE-----"
-
+"""
 	ks=jks.KeyStore.load(path, passphrase)
 	pk_entry=ks.private_keys[alias]
 
@@ -52,6 +59,7 @@ def get_keystore_pair(path, passphrase, alias, key_pass):
 	final_cert='\n'.join([PUBLIC_BEGIN, cert, PUBLIC_END])
 
 	return final_key.encode('utf-8'), final_cert
+"""
 
 #===========================================================================
 # This function converts base64 encoded private key and public certificate
@@ -71,13 +79,30 @@ def sign_string(message, privKey):
 	:param privKey: Path to private key, used to sign the nonce, or a bytes object containing the RSA private key
 	'''
 	if(isinstance(privKey, str)):
-		key = RSA.load_key(privKey)
+	#	key = RSA.load_key(privKey)
+		with open(privKey, "rb") as key_file:
+			key = serialization.load_pem_private_key(
+				key_file.read(),
+				password=None,
+				backend=default_backend()
+			)
+	
 	else:
-		key = RSA.load_key_string(privKey)
-	md = EVP.MessageDigest('sha512')
+		#key = RSA.load_key_string(privKey)
+		key = serialization.load_pem_private_key(privKey,password=None,backend=default_backend())
+	#md = EVP.MessageDigest('sha512')
+	md = hashes.Hash(hashes.SHA512(), backend=default_backend())
 	md.update(message)
-	digest=md.final()
-	signature = key.sign(digest, "sha512")
+	digest=md.finalize()
+	
+	#signature = key.sign(digest, "sha512")
+	signature = key.sign(digest,
+						padding.PSS(
+							mgf=padding.MGF1(hashes.SHA512()),
+							salt_length=padding.PSS.MAX_LENGTH
+							),
+						utils.Prehashed(hashes.SHA512())
+						)
 	
 	return b64encode(signature).decode('utf-8')	
 
