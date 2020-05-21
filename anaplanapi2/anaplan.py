@@ -10,6 +10,7 @@ import json
 import os
 import anaplan_auth
 from time import sleep
+import logging
 
 #===============================================================================
 # Defining global variables
@@ -106,10 +107,10 @@ def flat_file_upload(conn, fileId, chunkSize, file):
                     for item in buf:
                         file_data += item
                     file_upload = requests.put(url + "/chunks/" + str(chunkNum), headers=put_header, data=file_data)
-                    print("Uploading chunk " + str(chunkNum + 1) +", Status: " + file_upload.status_code)
+                    logging.debug("Uploading chunk " + str(chunkNum + 1) +", Status: " + file_upload.status_code)
                     if not file_upload.ok:
                         complete = False #If the upload fails, break the loop and prevent subsequent requests. Print error to screen
-                        print("Error " + str(file_upload.status_code) + '\n' + file_upload.text)
+                        logging.debug("Error " + str(file_upload.status_code) + '\n' + file_upload.text)
                         break
                     else:
                         chunkNum += 1    
@@ -167,7 +168,7 @@ def stream_upload(conn, file_id, buffer, **args):
             return "There was an error completing your upload: " + complete_upload.status_code + '\n' + complete_upload.text     
         __chunk__ = 0
     else:    
-        print("Starting file upload...")
+        logging.debug("Starting file upload...")
         if(len(buffer.encode()) > (__BYTES__ * 50)):
             return "Buffer too large, please send less than 50mb of data."
         else:    
@@ -205,27 +206,27 @@ def execute_action(conn, actionId, retryCount):
         }
     
     if actionId[:3] == "112":
-        print("Running action " + actionId)
+        logging.debug("Running action " + actionId)
         url = __base_url__ + "/" +workspaceGuid + "/models/" + modelGuid + "/imports/" + actionId + "/tasks"
         taskId = run_action(url, post_header, retryCount)
         return check_status(url, taskId, post_header)
     elif actionId[:3] == "116":
-        print("Running action " + actionId)
+        logging.debug("Running action " + actionId)
         url = __base_url__ + "/" +workspaceGuid + "/models/" + modelGuid + "/exports/" + actionId + "/tasks"      
         taskId = run_action(url, post_header, retryCount)
         return check_status(url, taskId, post_header)
     elif actionId[:3] == "117":
-        print("Running action " + actionId)
+        logging.debug("Running action " + actionId)
         url = __base_url__ + "/" +workspaceGuid + "/models/" + modelGuid + "/actions/" + actionId + "/tasks"
         taskId = run_action(url, post_header, retryCount)
         return check_status(url, taskId, post_header)
     elif actionId[:3] == "118":
-        print("Running action " + actionId)
+        logging.debug("Running action " + actionId)
         url = __base_url__ + "/" +workspaceGuid + "/models/" + modelGuid + "/processes/" + actionId + "/tasks"
         taskId = run_action(url, post_header, retryCount)
         return check_status(url, taskId, post_header)
     else:
-        print("Incorrect action ID provided!")
+        logging.debug("Incorrect action ID provided!")
 
 #===========================================================================
 # This function executes the Anaplan action, if there is a server error it
@@ -294,17 +295,17 @@ def execute_action_with_parameters(conn, actionId, retryCount, **params):
                 }
     
     if actionId[:3] == "112":
-        print("Running action " + actionId)
+        logging.debug("Running action " + actionId)
         url = __base_url__ + "/" +workspaceGuid + "/models/" + modelGuid + "/imports/" + actionId + "/tasks"
         taskId = run_action_with_parameters(url, post_header, retryCount, post_body)
         return check_status(url, taskId, post_header)
     elif actionId[:3] == "118":
-        print("Running action " + actionId)
+        logging.debug("Running action " + actionId)
         url = __base_url__ + "/" +workspaceGuid + "/models/" + modelGuid + "/processes/" + actionId + "/tasks"
         taskId = run_action(url, post_header, retryCount, post_body)
         return check_status(url, taskId, post_header)
     else:
-        print("Incorrect action ID provided! Only imports and processes may be executed with parameters.")
+        logging.debug("Incorrect action ID provided! Only imports and processes may be executed with parameters.")
 
 #===========================================================================
 # This function executes the Anaplan import or process with mapping parameters,
@@ -370,7 +371,7 @@ def parse_task_response(results, url, taskId, post_header):
     
     if job_status == "Failed.":
         error_message = str(results["result"]["details"][0]["localMessageText"])
-        print("The task has failed to run due to an error: " + error_message)
+        logging.debug("The task has failed to run due to an error: " + error_message)
         return "The task has failed to run due to an error: " + error_message
     else:
         if failure_alert:
@@ -396,10 +397,10 @@ def parse_task_response(results, url, taskId, post_header):
                         anaplan_process_dump += report  
                         failure_details = failure_details + local_message      
             if anaplan_process_dump != "":
-                print("The requested job is " + job_status)
+                logging.debug("The requested job is " + job_status)
                 return load_detail + '\n' + "Details:" + '\n' + error_detail + '\n' + "Failure dump(s):" + '\n' + anaplan_process_dump
             else:
-                print("The requested job is " + job_status)
+                logging.debug("The requested job is " + job_status)
                 return load_detail
         else:
             load = str(results["result"]["details"][0]["localMessageText"])
@@ -407,10 +408,10 @@ def parse_task_response(results, url, taskId, post_header):
             for i in results["result"]["details"][0]["values"]:
                 load_detail = load_detail + i + '\n'
             if failure_alert:
-                print("The requested job is " + job_status)
+                logging.debug("The requested job is " + job_status)
                 return "Failure Dump Available: " + failure_alert + ", Successful: " + success_report + '\n' + "Load details:" + '\n' + load + '\n' + load_detail + '\n' + "Failure dump:" + '\n' + dump
             else:
-                print("The requested job is " + job_status)
+                logging.debug("The requested job is " + job_status)
                 return "Failure Dump Available: " + failure_alert + ", Successful: " + success_report + '\n' + "Load details:" + '\n' + load + '\n' + load_detail
 
 #===========================================================================
@@ -433,13 +434,13 @@ def get_list(conn, resource):
     }
     url = __base_url__ + "/" + workspaceGuid + "/models/" + modelGuid + "/" + resource.lower()
     
-    print("Fetching " + resource + "...")
+    logging.debug("Fetching " + resource + "...")
     
     response = requests.get(url, headers=get_header)
     response = response.text
     response = json.loads(response)
     
-    print("Finished fetching " + resource + ".")
+    logging.debug("Finished fetching " + resource + ".")
      
     return response[resource]
 
@@ -455,7 +456,7 @@ def parse_get_response(response):
         if item == None:
             break
         else:
-            print("Name: " + item["name"] + '\n' + "ID: " + item["id"] + '\n')
+            logging.debug("Name: " + item["name"] + '\n' + "ID: " + item["id"] + '\n')
             
 #===========================================================================
 # This function downloads a file from Anaplan to the specified path.
@@ -484,7 +485,7 @@ def get_file(conn, fileId, location):
     
     local_file = open(location + file_name, "a+")
     
-    print("Fetching file " + fileId + "...")
+    logging.debug("Fetching file " + fileId + "...")
     
     while int(chunk)<int(chunk_count):
         file_contents = requests.get(url, headers=get_header)
@@ -549,14 +550,14 @@ def get_user_id(conn):
                 "Authorization": authorization
                 }
     
-    print("Fetching user ID...")
+    logging.debug("Fetching user ID...")
     
     user_details=requests.get(url, headers=get_header)
     user_details=json.loads(user_details.text)
     
     user_id=user_details["user"]["id"]
     
-    print("Finished fetching user ID.")
+    logging.debug("Finished fetching user ID.")
     
     return user_id
 
@@ -579,14 +580,14 @@ def get_models(conn, user_id):
                 "Content-Type":"application/json"
                 }
     
-    print("Fetching models...")
+    logging.debug("Fetching models...")
     
     model_list=requests.get(url, headers=get_header)
     model_list=json.loads(model_list.text)
     
     model_list=model_list["models"]
     
-    print("Finished fetching models.")
+    logging.debug("Finished fetching models.")
     
     return model_list
 
@@ -609,13 +610,13 @@ def get_workspaces(conn, user_id):
                 "Content-Type":"application/json"
                 }
     
-    print("Fetching workspaces...")
+    logging.debug("Fetching workspaces...")
     
     workspace_list=requests.get(url, headers=get_header)
     workspace_list=json.loads(workspace_list.text)
     
     model_list=workspace_list["workspaces"]
     
-    print("Finished fetching workspaces.")
+    logging.debug("Finished fetching workspaces.")
     
     return model_list
