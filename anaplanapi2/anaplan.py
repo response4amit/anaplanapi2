@@ -8,7 +8,7 @@
 import requests
 import json
 import os
-import anaplan_auth
+from anaplanapi2 import anaplan_auth
 from time import sleep
 import logging
 
