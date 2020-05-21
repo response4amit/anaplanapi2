@@ -1,2 +1,4 @@
-from MyLib.File1 import ClassA, ClassB, ClassC
-from MyLib.File2 import ClassX, ClassY, ClassZ
+from anaplanapi2.AnaplanConnection import AnaplanConnection
+from anaplanapi2.anaplan import generate_authorization,flat_file_upload,stream_upload,execute_action,run_action,execute_action_with_parameters,run_action_with_parameters,check_status,parse_task_response,get_list,parse_get_response,get_file,get_file_details,get_user_id,get_models,get_workspaces
+from anaplanapi2.anaplan_auth import get_keystore_pair,generate_post_data,certificate_auth_header,basic_auth_header,auth_request,verify_auth,authenticate,refresh_token
+from anaplanapi2.anaplan_resource_dictionary import build_id_dict,get_id,build_name_dict,get_name
