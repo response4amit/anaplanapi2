@@ -1,6 +1,6 @@
 #===============================================================================
-# Created:        12 Sep 2018
-# @author:        Jesse Wilson (Anaplan Asia Pte Ltd)
+# Created:        22 May 2019
+# @author:        AP (adapated from Jesse Wilson)
 # Description:    This library takes a JSON response and builds a key-value dictionary for easy traversal.
 # Input:          A JSON text string
 # Output:         Key-value dictionary object, resource name, or resource ID

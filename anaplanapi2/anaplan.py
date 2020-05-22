@@ -1,6 +1,6 @@
 #===============================================================================
-# Created:        11 Sep 2018
-# @author:        Jesse Wilson (Anaplan Asia Pte Ltd)
+# Created:        22 May 2019
+# @author:        AP (adapated from Jesse Wilson)
 # Description:    This library implements the Anaplan API to get lists of model resources, upload files to Anaplan server, 
 #                 download files from Anaplan server, and execute actions.
 #===============================================================================
@@ -9,8 +9,11 @@ import requests
 import json
 import os
 from anaplanapi2 import anaplan_auth
+from anaplanapi2 import anaplan_resource_dictionary
 from time import sleep
 import logging
+import io
+import pandas
 
 #===============================================================================
 # Defining global variables
@@ -21,7 +24,6 @@ __post_body__ = {
         }
 __BYTES__ = 1024 * 1024
 __chunk__ = 0
-
 #===========================================================================
 # This function reads the authentication type, Basic or Certificate, then passes
 # the remaining variables to anaplan_auth to generate the authorization for Anaplan API
@@ -245,6 +247,7 @@ def run_action(url, post_header, retryCount):
         
     while True:
         run_action = requests.post(url, headers=post_header, json=__post_body__)
+        
         if run_action.status_code != 200 and state < retryCount:
             sleep(sleepTime)
             run_action = requests.post(url, headers=post_header, json=__post_body__)
@@ -365,16 +368,15 @@ def parse_task_response(results, url, taskId, post_header):
     '''
     :param results: JSON dump of the results of an Anaplan action
     '''
-    
     job_status = results["currentStep"]
-    failure_alert = str(results["result"]["failureDumpAvailable"])
+    failure_alert = str(results["result"]["failureDumpAvailable"]) 
     
     if job_status == "Failed.":
-        error_message = str(results["result"]["details"][0]["localMessageText"])
-        logging.debug("The task has failed to run due to an error: " + error_message)
+        error_message = str(results["result"]["details"][0]["type"])
+        logging.debug("The task has failed to run due to an error: " + error_message) #changed localMessageText to type 
         return "The task has failed to run due to an error: " + error_message
     else:
-        if failure_alert:
+        if failure_alert == "True":
             dump = requests.get(url + "/" + taskId + '/' + "dump", headers=post_header)
             dump = dump.text
         success_report = str(results["result"]["successful"])
@@ -388,10 +390,10 @@ def parse_task_response(results, url, taskId, post_header):
                 object_id = str(nestedResults["objectId"])
                 load_detail = load_detail + "Process action " + object_id + " completed. Failure: " + process_subfailure + '\n'
                 if process_subfailure == "True":
-                        local_message = str(nestedResults["details"][0]["localMessageText"])
+                        local_message = str(nestedResults["details"][0]["type"]) #changed localMessageText to type 
                         details = nestedResults["details"][0]["values"]
                         for i in details:
-                            error_detail = error_detail + i + '\n'
+                            error_detail = error_detail + str(i or '') + '\n' #changed i to str(i or '')
                         dump = requests.get(url + "/" + taskId + '/' + "dumps" + '/' + object_id,  headers=post_header)
                         report = "Error dump for " + object_id + '\n' + dump.text
                         anaplan_process_dump += report  
@@ -403,11 +405,11 @@ def parse_task_response(results, url, taskId, post_header):
                 logging.debug("The requested job is " + job_status)
                 return load_detail
         else:
-            load = str(results["result"]["details"][0]["localMessageText"])
+            load = str(results["result"]["details"][0]["type"]) #changed localMessageText to type 
             load_detail = ""
             for i in results["result"]["details"][0]["values"]:
-                load_detail = load_detail + i + '\n'
-            if failure_alert:
+                load_detail = load_detail + str(i or '') + '\n' #changed i to str(i or '')
+            if failure_alert == "True":
                 logging.debug("The requested job is " + job_status)
                 return "Failure Dump Available: " + failure_alert + ", Successful: " + success_report + '\n' + "Load details:" + '\n' + load + '\n' + load_detail + '\n' + "Failure dump:" + '\n' + dump
             else:
@@ -498,6 +500,50 @@ def get_file(conn, fileId, location):
     local_file.close
     
     return "File successfully downloaded to " + location + file_name        
+
+#===========================================================================
+# This function downloads a file from Anaplan to a Pandas Dataframe.
+#===========================================================================
+def get_file_as_dataframe(conn, fileId, delimiter=",",header=0,index_col=None,skiprows=None):
+    ''' 
+    :param conn: AnaplanConnection object which contains authorization string, workspace ID, and model ID
+    :param fileId: ID of the Anaplan file to download
+    :param delimiter: Delimiter to use default ,
+    :param header: Row number(s) to use as the column names, and the start of the data
+    :param index_col: Column(s) to use as the row labels of the DataFrame, either given as string name or column index
+    :param skiprows: Line numbers to skip (0-indexed) or number of lines to skip (int) at the start of the file
+    '''
+    
+    chunk = 0
+    details = get_file_details(conn, fileId)
+    chunk_count = details[0]
+    file_name = details[1]
+    
+    authorization = conn.authorization
+    workspaceGuid = conn.workspaceGuid
+    modelGuid = conn.modelGuid
+    
+    get_header = {
+                "Authorization": authorization,
+    }    
+    
+    url = __base_url__ + "/" + workspaceGuid + "/models/" + modelGuid + "/files/" + fileId + "/chunks/" + str(chunk)
+    
+    logging.debug("Fetching file " + fileId + "...")
+    
+    while int(chunk)<int(chunk_count):
+        file_contents = requests.get(url, headers=get_header)
+        if file_contents.ok:
+            #urlData = file_contents.content
+            #rawData = pandas.read_csv(io.StringIO(urlData.decode('utf-8')))
+            rawData = pandas.read_csv(io.StringIO(file_contents.text))
+        else:
+            return "There was a problem fetching the file: " + file_contents.text
+            break
+        chunk = str(int(chunk) + 1)
+    
+    return rawData      
+    
 
 #===============================================================================
 # This function queries the model for name and chunk count of a specified file
@@ -620,3 +666,29 @@ def get_workspaces(conn, user_id):
     logging.debug("Finished fetching workspaces.")
     
     return model_list
+    
+#===============================================================================
+# This function returns the action id based on the action name
+#===============================================================================
+def get_actionid(conn,action_type,action_name):
+    '''
+    @param conn: AnaplanConnection object which contains authorization string, workspace ID, and model ID
+    @param action_type: string denoting action type
+    @param action_name: string denoting action name
+    '''
+    list_of_actions = get_list(conn, action_type)
+    actions_dict = anaplan_resource_dictionary.build_id_dict(list_of_actions,action_type)
+    return anaplan_resource_dictionary.get_id(actions_dict,action_name)
+    
+#===============================================================================
+# This function returns the file id based on the file name
+#===============================================================================
+def get_fileid(conn,file_name):
+    '''
+    @param conn: AnaplanConnection object which contains authorization string, workspace ID, and model ID
+    @param file_name: string denoting file name
+    '''
+    list_of_files = get_list(conn, "files")
+    files_dict = anaplan_resource_dictionary.build_id_dict(list_of_files,"files")
+    return anaplan_resource_dictionary.get_id(files_dict, file_name)
+    

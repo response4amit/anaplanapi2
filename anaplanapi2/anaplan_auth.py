@@ -1,6 +1,6 @@
 #==============================================================================
-# Created:		28 June 2018
-# @author:		Jesse Wilson  (Anaplan Asia Pte Ltd)
+# Created:        22 May 2019
+# @author:        AP (adapated from Jesse Wilson)
 # Description:	This script reads a user's public and private keys in order to
 # 				sign a cryptographic nonce. It then generates a request to
 # 				authenticate with Anaplan, passing the signed and unsigned
