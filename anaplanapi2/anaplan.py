@@ -504,7 +504,7 @@ def get_file(conn, fileId, location):
 #===========================================================================
 # This function downloads a file from Anaplan to a Pandas Dataframe.
 #===========================================================================
-def get_file_as_dataframe(conn, fileId, delimiter=",",header=0,index_col=None,skiprows=None):
+def get_file_as_dataframe(conn, fileId, delimiter=",",header_row=0,index_col=None,skiprows=None):
     ''' 
     :param conn: AnaplanConnection object which contains authorization string, workspace ID, and model ID
     :param fileId: ID of the Anaplan file to download
@@ -536,7 +536,7 @@ def get_file_as_dataframe(conn, fileId, delimiter=",",header=0,index_col=None,sk
         if file_contents.ok:
             #urlData = file_contents.content
             #rawData = pandas.read_csv(io.StringIO(urlData.decode('utf-8')))
-            rawData = pandas.read_csv(io.StringIO(file_contents.text))
+            rawData = pandas.read_csv(io.StringIO(file_contents.text),header=header_row, sep=delimiter)
         else:
             return "There was a problem fetching the file: " + file_contents.text
             break
