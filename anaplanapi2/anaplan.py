@@ -133,12 +133,12 @@ def stream_upload(conn, file_id, buffer, **args):
     '''
     :param conn: AnaplanConnection object which contains authorization string, workspace ID, and model ID
     :param fileId: ID of the file in the Anaplan model
-    :param buffer: data to uplaod to Anaplan file
+    :param buffer: dataframe to upload to Anaplan file
     :param *args: Once complete, this should be True to complete upload and reset chunk counter
     '''
     
     global __chunk__
-    
+    chunk_temp=0
     #Setting local variables for connection details
     authorization = conn.authorization
     workspaceGuid = conn.workspaceGuid
@@ -164,28 +164,58 @@ def stream_upload(conn, file_id, buffer, **args):
                       "chunkCount": __chunk__
                      }
         complete_upload = requests.post(url=url + "/complete", headers=post_header, json=file_metadata_complete)
+        chunk_temp=__chunk__
+        __chunk__ = 0
         if complete_upload.ok:
-            return "Upload complete, " + str(__chunk__) + " chunk(s) uploaded to the server."
+            return "Upload complete, " + str(chunk_temp) + " chunk(s) uploaded to the server."
         else:
             return "There was an error completing your upload: " + complete_upload.status_code + '\n' + complete_upload.text     
-        __chunk__ = 0
+        
     else:    
         logging.debug("Starting file upload...")
         if(len(buffer.encode()) > (__BYTES__ * 50)):
             return "Buffer too large, please send less than 50mb of data."
         else:    
-            start_upload_post = requests.post(url, headers=post_header, json=stream_metadata_start)
-            #Confirm that the metadata update for the requested file was OK before proceeding with file upload
-            if start_upload_post.ok:
-                stream_upload = requests.put(url + "/chunks/" + str(__chunk__), headers=put_header, data=buffer)
-                if not stream_upload.ok:
-                    return "Error " + str(stream_upload.status_code) + '\n' + stream_upload.text
-                else:
-                    __chunk__ += 1
-                    return "Uploading chunk " + str(__chunk__) + ", Status: " + str(stream_upload.status_code)
+            if __chunk__==0:
+                start_upload_post = requests.post(url, headers=post_header, json=stream_metadata_start)
+                #Confirm that the metadata update for the requested file was OK before proceeding with file upload
+                if not start_upload_post.ok:
+                    return "There was an error with your request: " + start_upload_post.status_code + " " + start_upload_post.text
+                
+            stream_upload = requests.put(url + "/chunks/" + str(__chunk__), headers=put_header, data=buffer)
+            if not stream_upload.ok:
+                return "Error " + str(stream_upload.status_code) + '\n' + stream_upload.text
             else:
-                return "There was an error with your request: " + start_upload_post.status_code + " " + start_upload_post.text
-
+                __chunk__ += 1
+                return "Uploading chunk " + str(__chunk__) + ", Status: " + str(stream_upload.status_code)
+            
+#===========================================================================
+# This function uploads a dataframe to Anaplan in chunks of no larger
+# than 50mb. 
+#===========================================================================
+def stream_upload_df(conn, file_id, df, chunk_size):
+    '''
+    :param conn: AnaplanConnection object which contains authorization string, workspace ID, and model ID
+    :param fileId: ID of the file in the Anaplan model
+    :param df: datafame to upload to Anaplan file
+    :param chunk_size: chunk row size
+    '''
+    str
+    start_index=0
+    end_index=0
+    num_rows=len(df.index)
+    while end_index<num_rows:
+        start_index=end_index
+        end_index=start_index + chunk_size
+        chunk_df=df[start_index:end_index]
+        str_buffer=io.StringIO()
+        chunk_df.to_csv(str_buffer,index=False,header=(start_index==0),chunksize=chunk_size)
+        stream_upload(conn, file_id, str_buffer.getvalue())
+        str_buffer.close()
+        
+    #complete the upload
+    stream_upload(conn, file_id, "",complete=True)
+    return
 #===========================================================================
 # This function reads the ID of the desired action to run, POSTs the task
 # to the Anaplan API to execute the action, then monitors the status until
@@ -483,14 +513,15 @@ def get_file(conn, fileId, location):
                 "Authorization": authorization,
     }    
     
-    url = __base_url__ + "/" + workspaceGuid + "/models/" + modelGuid + "/files/" + fileId + "/chunks/" + str(chunk)
     
-    local_file = open(location + file_name, "a+")
+    local_file = open(location + file_name, "w+",newline='')
     
     logging.debug("Fetching file " + fileId + "...")
     
     while int(chunk)<int(chunk_count):
+        url = __base_url__ + "/" + workspaceGuid + "/models/" + modelGuid + "/files/" + fileId + "/chunks/" + str(chunk)
         file_contents = requests.get(url, headers=get_header)
+        
         if file_contents.ok:
             local_file.write(file_contents.text)
         else:
@@ -513,7 +544,7 @@ def get_file_as_dataframe(conn, fileId, delimiter=",",header_row=0,index_col=Non
     :param index_col: Column(s) to use as the row labels of the DataFrame, either given as string name or column index
     :param skiprows: Line numbers to skip (0-indexed) or number of lines to skip (int) at the start of the file
     '''
-    
+    df=pandas.DataFrame()
     chunk = 0
     details = get_file_details(conn, fileId)
     chunk_count = details[0]
@@ -527,22 +558,26 @@ def get_file_as_dataframe(conn, fileId, delimiter=",",header_row=0,index_col=Non
                 "Authorization": authorization,
     }    
     
-    url = __base_url__ + "/" + workspaceGuid + "/models/" + modelGuid + "/files/" + fileId + "/chunks/" + str(chunk)
     
     logging.debug("Fetching file " + fileId + "...")
     
     while int(chunk)<int(chunk_count):
+        url = __base_url__ + "/" + workspaceGuid + "/models/" + modelGuid + "/files/" + fileId + "/chunks/" + str(chunk)
         file_contents = requests.get(url, headers=get_header)
         if file_contents.ok:
             #urlData = file_contents.content
             #rawData = pandas.read_csv(io.StringIO(urlData.decode('utf-8')))
-            rawData = pandas.read_csv(io.StringIO(file_contents.text),header=header_row, sep=delimiter)
+            if chunk==0:
+                df = pandas.read_csv(io.StringIO(file_contents.text),header=header_row, sep=delimiter)
+            else:
+                rawData = pandas.read_csv(io.StringIO(file_contents.text),header=None,names=df.columns, sep=delimiter)
+                df=pandas.concat([df,rawData],ignore_index=True)
         else:
             return "There was a problem fetching the file: " + file_contents.text
             break
         chunk = str(int(chunk) + 1)
     
-    return rawData      
+    return df      
     
 
 #===============================================================================
@@ -691,4 +726,22 @@ def get_fileid(conn,file_name):
     list_of_files = get_list(conn, "files")
     files_dict = anaplan_resource_dictionary.build_id_dict(list_of_files,"files")
     return anaplan_resource_dictionary.get_id(files_dict, file_name)
-    
+
+#===============================================================================
+# This function prints the http request object
+#===============================================================================    
+def pretty_print_request(req):
+    """
+    At this point it is completely built and ready
+    to be fired; it is "prepared".
+
+    However pay attention at the formatting used in 
+    this function because it is programmed to be pretty 
+    printed and may differ from the actual request.
+    """
+    logging.debug('{}\n{}\r\n{}\r\n\r\n{}'.format(
+        '-----------START-----------',
+        req.method + ' ' + req.url,
+        '\r\n'.join('{}: {}'.format(k, v) for k, v in req.headers.items()),
+        req.body,
+    ))
